@@ -41,14 +41,14 @@ type Vec2 = Point2<f64>;
 pub(crate) fn find_top_std(
     cntrs: &Vec<Vec<Vec2>>, depth: usize, grid_size: i16, rect: Rect,
 ) -> Vec<String> {
-    let mut hashes = vec![];
     if cntrs.len() == 0 {
-        return hashes;
+        return Vec::new();
     }
 
     let ss = GenPolyLines::select_top(cntrs, depth, grid_size, rect);
 
-    for a in ss.iter() {
+    // Paralelizacija generisanja hash-eva
+    let hashes: Vec<String> = ss.par_iter().map(|a| {
         let data: Vec<u8> = a.1.nodes.as_slice().iter()
             .flat_map(|&p| [p.x.to_be_bytes(), p.y.to_be_bytes()])
             .flatten()
@@ -59,11 +59,9 @@ pub(crate) fn find_top_std(
 
         let mut buf = [0u8; 64];
         let hash = hasher.finalize();
-        let hex_hash = base16ct::lower::encode_str(&hash, &mut buf).unwrap();
+        base16ct::lower::encode_str(&hash, &mut buf).unwrap().to_string()
+    }).collect();
 
-        hashes.push(hex_hash.to_string());
-    }
-    hashes.dedup();
     hashes
 }
 
