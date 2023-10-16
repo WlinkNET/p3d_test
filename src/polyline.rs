@@ -3,6 +3,7 @@ use alloc::vec::IntoIter;
 use alloc::collections::vec_deque::VecDeque;
 
 use sha2::{Sha256, Digest};
+use rayon::prelude::*;
 
 use crate::contour::{CellSet, Cntr, Rect};
 use cgmath::MetricSpace;
@@ -186,28 +187,25 @@ impl GenPolyLines {
         v
     }
 
-    pub (crate) fn select_top_all(
+    pub(crate) fn select_top_all(
         cntrs: &Vec<Vec<Vec2>>, n: usize, grid_size: usize, rect: Rect,
     ) -> Vec<Vec<(f64, Vec<u8>)>> {
-
-        let mut top_heap: Vec<Vec<(f64, Vec<u8>)>> = Vec::with_capacity(grid_size as usize);
-
-        for cntr in cntrs.iter() {
+        let top_heap: Vec<Vec<(f64, Vec<u8>)>> = cntrs.par_iter().map(|cntr| {
             let mut top_in_cntr: VecDeque<(f64, PolyLine)> = VecDeque::with_capacity(n);
-
+    
             let cn = Cntr::new(Some(cntr.to_vec()), grid_size as i16, &rect);
             let zone = cn.line_zone();
-
+    
             let mut gen_lines = GenPolyLines::new(zone, grid_size as i16);
             let start_point = Point2 { x: 0, y: 0 };
             gen_lines.line_buf.nodes.push(start_point);
-
+    
             let cntr_size = cn.points.len();
             let calc_sco = |pl: &PolyLine|
                 GenPolyLines::sco2(
                     &cn, &pl.line2points(cntr_size, &rect),
                 );
-
+    
             let mut ff = |pl: &PolyLine| {
                 let d = calc_sco(pl);
                 let len = top_in_cntr.len();
@@ -224,8 +222,9 @@ impl GenPolyLines {
                 }
             };
             gen_lines.complete_line(&mut ff);
-            top_heap.push(top_in_cntr.into_iter().map(|a| (a.0, a.1.calc_hash().to_vec())).collect());
-        }
+            top_in_cntr.into_iter().map(|a| (a.0, a.1.calc_hash().to_vec())).collect()
+        }).collect();
+    
         top_heap
     }
 
