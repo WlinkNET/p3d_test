@@ -5,7 +5,7 @@ use base16ct;
 extern crate spin;
 extern crate rayon;
 
-use spin::Mutex;
+//use spin::Mutex;
 use rayon::prelude::*;
 
 use core::ops::SubAssign;
@@ -339,8 +339,7 @@ fn cross(triangles: &VctrTriangles) -> Array2<f64> {
 
 
 pub fn mass_properties(triangles: VctrTriangles) -> (Array1<f64>, Array2<f64>) {
-    let dims = triangles.dim();
-
+    
     let p0: ArrayView2<f64> = triangles.slice(s![0.., 0, 0..]);
     let p1: ArrayView2<f64> = triangles.slice(s![0.., 1, 0..]);
     let p2: ArrayView2<f64> = triangles.slice(s![0.., 2, 0..]);
@@ -357,6 +356,13 @@ pub fn mass_properties(triangles: VctrTriangles) -> (Array1<f64>, Array2<f64>) {
     let integral = spin::Mutex::new(Array2::zeros((10, d)));
 
     let crosses = cross(&triangles);
+
+    {
+        let mut integral_locked = integral.lock();
+        integral_locked.slice_mut(s![0..1, ..]).assign(&(&crosses.slice(s![.., 0]) * &f1.slice(s![.., 0])));
+        integral_locked.slice_mut(s![1..4, ..]).assign(&(&crosses * &f2).t().slice(s![.., ..]));
+        integral_locked.slice_mut(s![4..7, ..]).assign(&(&crosses * &f3).t().slice(s![.., ..]));
+    }
 
     // Parallelize this loop
     (0..3).into_par_iter().for_each(|i| {
@@ -467,24 +473,19 @@ pub fn principal_inertia_transform(triangles: VctrTriangles) -> Array2<f64>{
 }
 
 pub fn intersect(mesh: &Mesh, z_sect: f64) -> Vec::<Vec2> {
-    let sect = spin::Mutex::new(Vec::<Vec2>::new());
-
-    mesh.vertex_iter().par_bridge().for_each(|vertex_id| {
+    let mut sect = Vec::<Vec2>::new();
+    for vertex_id in mesh.vertex_iter() {
         let p = mesh.vertex_position(vertex_id);
         if (p.z - z_sect).abs() < 0.15 {
-            let mut sect_locked = sect.lock();
-            sect_locked.push(Vec2{x: p.x, y: p.y});
+            sect.push(Vec2{x: p.x, y: p.y});
         }
-    });
-
-    sect.into_inner()
+    }
+    sect
 }
 
-
 pub fn intersect_2(mesh: &Mesh, z_sect: f64, delta: f64) -> Vec::<Vec2> {
-    let sect = spin::Mutex::new(Vec::<Vec2>::new());
-
-    mesh.edge_iter().par_bridge().for_each(|edge_id| {
+    let mut sect = Vec::<Vec2>::new();
+    for edge_id in mesh.edge_iter() {
         let (p1, p2) = mesh.edge_positions(edge_id);
         if p2.z >= z_sect && p1.z <= z_sect || p2.z <= z_sect && p1.z >= z_sect {
             let (x, y);
@@ -501,47 +502,41 @@ pub fn intersect_2(mesh: &Mesh, z_sect: f64, delta: f64) -> Vec::<Vec2> {
                 x = (p2.x + k * p1.x) / (k + 1.0);
                 y = (p2.y + k * p1.y) / (k + 1.0);
             }
-            let mut sect_locked = sect.lock();
-            sect_locked.push(Vec2{x, y});
+            sect.push(Vec2{x, y});
         }
-    });
-
-    sect.into_inner()
+    }
+    sect
 }
 
 
+use spin::Mutex;
+
 pub fn get_contour(sect: Vec<Vec2>) -> Vec<Point2<f64>> {
     let len = sect.len();
-    let mut mt: Vec<Vec<f32>> = Vec::with_capacity(len);
-    let mut v: Vec<f32> = Vec::with_capacity(len);
-    v.resize(len, 0f32);
-    mt.resize(len, v);
+    let mt = Mutex::new(vec![vec![0f32; len]; len]);
 
-    for (i, p) in sect.iter().enumerate() {
-        //let v: Vec<f32> = Vec::with_capacity(len);
-        // v.resize(len, 0f32);
-        //mt.push(v);
+    // Paralelizacija računanja matrice udaljenosti
+    sect.par_iter().enumerate().for_each(|(i, p)| {
         for (j, q) in sect.iter().enumerate() {
-            mt[i][j] = p.distance2(*q) as f32;
+            let mut locked_mt = mt.lock();
+            locked_mt[i][j] = p.distance2(*q) as f32;
         }
-    }
+    });
 
+    let mt = mt.into_inner();
     let mut ii: Vec<usize> = (0..len).collect();
     for i in 0..len-1 {
-        let v = &mt[ ii[ i ] ];
-        let j = (i+1..len).min_by_key(|&k| (v[ ii[ k ] ] * 10000.0) as u32).unwrap();
+        let v = &mt[ii[i]];
+        let j = (i+1..len).min_by_key(|&k| (v[ii[k]] * 10000.0) as u32).unwrap();
         ii.swap(i + 1, j);
     }
 
     let mut cntr: Vec<Point2<f64>> = sect
         .iter().enumerate()
-        .map(|(i, &_a)| sect[ ii[ i ] ])
+        .map(|(i, &_a)| sect[ii[i]])
         .collect();
 
     cntr.push(cntr.as_slice()[0]);
-
-    // println!("contour len: {}", sect.len());
-    // println!("contour: {:?}", cntr);
 
     let p0 = *cntr.first().unwrap();
     let pn = *cntr.last().unwrap();
@@ -558,3 +553,5 @@ pub fn get_contour(sect: Vec<Vec2>) -> Vec<Point2<f64>> {
 
     cntr
 }
+
+
