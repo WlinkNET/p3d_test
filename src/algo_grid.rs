@@ -467,16 +467,19 @@ pub fn principal_inertia_transform(triangles: VctrTriangles) -> Array2<f64>{
 }
 
 pub fn intersect(mesh: &Mesh, z_sect: f64) -> Vec::<Vec2> {
-    let mut sect = Vec::<Vec2>::new();
+    let sect = spin::Mutex::new(Vec::<Vec2>::new());
 
-    for vertex_id in mesh.vertex_iter() {
+    mesh.vertex_iter().par_bridge().for_each(|vertex_id| {
         let p = mesh.vertex_position(vertex_id);
         if (p.z - z_sect).abs() < 0.15 {
-            sect.push(Vec2{x: p.x, y: p.y});
+            let mut sect_locked = sect.lock();
+            sect_locked.push(Vec2{x: p.x, y: p.y});
         }
-    }
-    sect
+    });
+
+    sect.into_inner()
 }
+
 
 pub fn intersect_2(mesh: &Mesh, z_sect: f64, delta: f64) -> Vec::<Vec2> {
     let mut sect = Vec::<Vec2>::new();
