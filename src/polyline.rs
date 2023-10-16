@@ -1,9 +1,11 @@
 use alloc::vec::Vec;
 use alloc::vec::IntoIter;
 use alloc::collections::vec_deque::VecDeque;
+use alloc::sync::Arc;
 
 use sha2::{Sha256, Digest};
 use rayon::prelude::*;
+use spin::Mutex;
 
 use crate::contour::{CellSet, Cntr, Rect};
 use cgmath::MetricSpace;
@@ -15,7 +17,7 @@ pub(crate) const DISTANCE: i32 = 2;
 
 type Vec2 = Point2<f64>;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct PolyLine {
     pub(crate) nodes: Vec<Point2<i32>>,
     pub(crate) grid_size: i16,
@@ -149,10 +151,9 @@ impl GenPolyLines {
         cntrs: &Vec<Vec<Vec2>>, n: usize, grid_size: i16, rect: Rect,
     ) -> Vec<(f64, PolyLine)> {
 
-        let mut top_heap: VecDeque<(f64, PolyLine)> = VecDeque::with_capacity(n);
-        // TODO: select strt point from self.cells
+        let top_heap: Arc<Mutex<VecDeque<(f64, PolyLine)>>> = Arc::new(Mutex::new(VecDeque::with_capacity(n)));
 
-        for cntr in cntrs.iter() {
+        cntrs.par_iter().for_each(|cntr| {
             let cn = Cntr::new(Some(cntr.to_vec()), grid_size, &rect);
             let zone = cn.line_zone();
 
@@ -168,22 +169,23 @@ impl GenPolyLines {
 
             let mut ff = |pl: &PolyLine| {
                 let d = calc_sco(pl);
-                let len = top_heap.len();
+                let mut top_heap_locked = top_heap.lock();
+                let len = top_heap_locked.len();
                 if len > 0 {
-                    if d < top_heap.get(len - 1).unwrap().0 || len <= n {
+                    if d < top_heap_locked.get(len - 1).unwrap().0 || len <= n {
                         if len == n {
-                            top_heap.pop_front();
+                            top_heap_locked.pop_front();
                         }
-                        top_heap.push_back((d, pl.clone()));
-                        top_heap.make_contiguous().sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+                        top_heap_locked.push_back((d, pl.clone()));
+                        top_heap_locked.make_contiguous().sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
                     }
                 } else {
-                    top_heap.push_back((d, pl.clone()));
+                    top_heap_locked.push_back((d, pl.clone()));
                 }
             };
             gen_lines.complete_line(&mut ff);
-        }
-        let v = top_heap.iter().cloned().collect();
+        });
+        let v: Vec<(f64, PolyLine)> = Arc::try_unwrap(top_heap).unwrap().lock().iter().cloned().collect();
         v
     }
 
