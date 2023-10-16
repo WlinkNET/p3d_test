@@ -230,43 +230,34 @@ impl GenPolyLines {
         top_heap
     }
 
-    pub (crate) fn select_top_all_3(
+    pub(crate) fn select_top_all_3(
         cntrs: &Vec<Vec<Vec2>>, depth: usize, grid_size: usize, rect: Rect,
     ) -> Vec<Vec<(f64, Vec<u8>)>> {
-
-        let mut top_heap: Vec<Vec<(f64, Vec<u8>)>> = Vec::with_capacity(grid_size as usize);
-
-        for cntr in cntrs.iter() {
+        let top_heap = Arc::new(Mutex::new(Vec::with_capacity(grid_size as usize)));
+    
+        cntrs.par_iter().for_each(|cntr| {
             let mut top_in_cntr: Vec<(f64, PolyLine)> = Vec::with_capacity(depth);
             let cn = Cntr::new(Some(cntr.to_vec()), grid_size as i16, &rect);
             let zone = cn.line_zone();
             let mut gen_lines = GenPolyLines::new(zone, grid_size as i16);
             let start_point = Point2 { x: 0, y: 0 };
-
+    
             gen_lines.line_buf.nodes.push(start_point);
-
+    
             let cntr_size = cn.points.len();
             let calc_sco = |pl: &PolyLine|
                 GenPolyLines::sco2(
                     &cn, &pl.line2points(cntr_size, &rect),
                 );
-
+    
             let mut ff = |pl: &PolyLine| {
                 let d = calc_sco(pl);
-
-                if let Some(_) = top_in_cntr.iter().find(|a| a.0 == d) {
-                    return
-                }
-                else {
+    
+                if top_in_cntr.iter().find(|a| a.0 == d).is_none() {
                     if top_in_cntr.len() == depth {
-                        let m = top_in_cntr.iter()
-                            .enumerate()
-                            .max_by(|(_, a), (_, b)|
-                                a.0.partial_cmp(&b.0).unwrap_or(core::cmp::Ordering::Equal)
-                            )
-                            .map(|(index, _)| index);
-
-                        if let Some(i) = m {
+                        if let Some(i) = top_in_cntr.iter().enumerate().max_by(|(_, a), (_, b)|
+                            a.0.partial_cmp(&b.0).unwrap_or(core::cmp::Ordering::Equal)
+                        ).map(|(index, _)| index) {
                             top_in_cntr[i] = (d, pl.clone());
                         }
                     } else {
@@ -274,11 +265,16 @@ impl GenPolyLines {
                     }
                 }
             };
+    
             gen_lines.complete_line(&mut ff);
-            top_heap.push(top_in_cntr.into_iter().map(|a| (a.0, a.1.calc_hash().to_vec())).collect());
-        }
-        top_heap
+    
+            let mut locked_heap = top_heap.lock();
+            locked_heap.push(top_in_cntr.into_iter().map(|a| (a.0, a.1.calc_hash().to_vec())).collect());
+        });
+    
+        Arc::try_unwrap(top_heap).unwrap().lock().to_vec()
     }
+    
 
     pub (crate) fn select_top_all_4(
         cntrs: &Vec<Vec<Vec2>>, depth: usize, grid_size: usize, rect: Rect,
