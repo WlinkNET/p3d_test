@@ -158,10 +158,9 @@ pub(crate) fn find_top_std_3(
     let mut best_totals: Vec<(f64, Vec<u8>)> = Vec::with_capacity(depth);
 
     let mut ff = |d: f64, hash: Vec<u8>| {
-        if let Some(_) = best_totals.iter().find(|a| a.0 == d) {
-            return
-        }
-        else {
+        if best_totals.iter().any(|a| a.0 == d) {
+            return;
+        } else {
             if best_totals.len() == depth {
                 let m = best_totals.iter()
                     .enumerate()
@@ -208,17 +207,20 @@ pub(crate) fn find_top_std_3(
     }
 
     best_totals.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-    for hash in best_totals.iter() {
+
+    // Paralelizacija generisanja hash-eva
+    hashes = best_totals.par_iter().map(|hash| {
         let mut hasher = Sha256::new();
         hasher.update(hash.1.as_slice());
 
         let mut a: Vec<u8> = repeat(0).take(32 * n_sect).collect();
-        let mut buf= a.as_mut();
+        let mut buf = a.as_mut();
         let hash = hasher.finalize();
         let hex_hash = base16ct::lower::encode_str(&hash, &mut buf).unwrap();
 
-        hashes.push(hex_hash.to_string());
-    }
+        hex_hash.to_string()
+    }).collect();
+
     hashes.dedup();
     hashes
 }
