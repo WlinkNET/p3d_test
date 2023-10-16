@@ -314,7 +314,6 @@ fn cross(triangles: &VctrTriangles) -> Array2<f64> {
     let dims = triangles.dim();
     let d = spin::Mutex::new(Array3::zeros((dims.0, 2, dims.1)));
 
-    // Paralelizacija prve petlje
     triangles.axis_iter(Axis(0)).enumerate().par_bridge().for_each(|(i, m)| {
         let mut d_locked = d.lock();
         for (j, p) in m.axis_iter(Axis(1)).enumerate() {
@@ -325,7 +324,6 @@ fn cross(triangles: &VctrTriangles) -> Array2<f64> {
 
     let cr = spin::Mutex::new(Array2::zeros((dims.0, dims.1)));
 
-    // Paralelizacija druge petlje
     d.lock().axis_iter(Axis(0)).enumerate().par_bridge().for_each(|(i, m)| {
         let mut cr_locked = cr.lock();
         let a: ArrayView1<f64> = m.slice(s![0, ..]);
