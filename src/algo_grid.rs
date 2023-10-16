@@ -241,24 +241,19 @@ pub(crate) fn find_top_std_4(
     let mut best_totals: Vec<(f64, Vec<u8>)> = Vec::with_capacity(depth);
 
     let mut ff = |d: f64, hash: Vec<u8>| {
-        if let Some(_) = best_totals.iter().find(|a| a.0 == d) {
+        if best_totals.iter().any(|a| a.0 == d) {
             return;
-        } else {
-            if best_totals.len() == depth {
-                let m = best_totals.iter()
-                    .enumerate()
-                    .max_by(|(_, a), (_, b)|
-                        a.0.partial_cmp(&b.0).unwrap_or(core::cmp::Ordering::Equal)
-                    );
-
-                if let Some((i, r)) = m {
-                    if r.0 > d {
-                        best_totals[i] = (d, hash);
-                    }
+        }
+        if best_totals.len() == depth {
+            let m = best_totals.iter().max_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(core::cmp::Ordering::Equal));
+            if let Some(r) = m {
+                if r.0 > d {
+                    let pos = best_totals.iter().position(|x| x.0 == r.0).unwrap();
+                    best_totals[pos] = (d, hash);
                 }
-            } else {
-                best_totals.push((d, hash));
             }
+        } else {
+            best_totals.push((d, hash));
         }
     };
 
@@ -294,22 +289,17 @@ pub(crate) fn find_top_std_4(
         }
     }
 
-    let mut results: Vec<_> = best_totals.par_iter().enumerate().map(|(index, hash)| {
+    best_totals.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    for hash in best_totals.iter() {
         let mut hasher = Sha256::new();
         hasher.update(hash.1.as_slice());
 
         let mut a: Vec<u8> = repeat(0).take(32 * n_sect).collect();
-        let mut buf= a.as_mut();
+        let mut buf = a.as_mut();
         let hash = hasher.finalize();
         let hex_hash = base16ct::lower::encode_str(&hash, &mut buf).unwrap();
 
-        (index, hex_hash.to_string())
-    }).collect();
-
-    results.sort_by(|a, b| a.0.cmp(&b.0));
-
-    for (_, hash) in results {
-        hashes.push(hash);
+        hashes.push(hex_hash.to_string());
     }
 
     hashes.dedup();
