@@ -279,9 +279,9 @@ impl GenPolyLines {
     pub (crate) fn select_top_all_4(
         cntrs: &Vec<Vec<Vec2>>, depth: usize, grid_size: usize, rect: Rect,
     ) -> Vec<Vec<(f64, Vec<u8>)>> {
-        let top_heap: Arc<Mutex<Vec<Vec<(f64, Vec<u8>)>>>> = Arc::new(Mutex::new(Vec::with_capacity(grid_size as usize)));
+        let mut top_heap: Vec<Vec<(f64, Vec<u8>)>> = Vec::with_capacity(grid_size as usize);
     
-        cntrs.par_iter().for_each(|cntr| {
+        for cntr in cntrs.iter() {
             let mut top_in_cntr: Vec<(f64, PolyLine)> = Vec::with_capacity(depth);
             let cn = Cntr::new(Some(cntr.to_vec()), grid_size as i16, &rect);
             let zone = cn.line_zone();
@@ -309,12 +309,12 @@ impl GenPolyLines {
             };
             gen_lines.complete_line(&mut ff);
     
-            let mut top_heap_lock = top_heap.lock();
-            top_heap_lock.push(top_in_cntr.into_iter().map(|a| (a.0, a.1.calc_hash().to_vec())).collect());
-        });
+            top_heap.push(top_in_cntr.into_iter().map(|a| (a.0, a.1.calc_hash().to_vec())).collect());
+        }
     
-        Arc::try_unwrap(top_heap).unwrap().lock().to_vec()
+        top_heap
     }
+    
     
 
     fn complete_line<F>(&mut self, f: &mut F)
