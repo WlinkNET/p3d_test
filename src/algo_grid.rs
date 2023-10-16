@@ -482,9 +482,9 @@ pub fn intersect(mesh: &Mesh, z_sect: f64) -> Vec::<Vec2> {
 
 
 pub fn intersect_2(mesh: &Mesh, z_sect: f64, delta: f64) -> Vec::<Vec2> {
-    let mut sect = Vec::<Vec2>::new();
+    let sect = spin::Mutex::new(Vec::<Vec2>::new());
 
-    for edge_id in mesh.edge_iter() {
+    mesh.edge_iter().par_bridge().for_each(|edge_id| {
         let (p1, p2) = mesh.edge_positions(edge_id);
         if p2.z >= z_sect && p1.z <= z_sect || p2.z <= z_sect && p1.z >= z_sect {
             let (x, y);
@@ -501,11 +501,14 @@ pub fn intersect_2(mesh: &Mesh, z_sect: f64, delta: f64) -> Vec::<Vec2> {
                 x = (p2.x + k * p1.x) / (k + 1.0);
                 y = (p2.y + k * p1.y) / (k + 1.0);
             }
-            sect.push(Vec2{x, y});
+            let mut sect_locked = sect.lock();
+            sect_locked.push(Vec2{x, y});
         }
-    }
-    sect
+    });
+
+    sect.into_inner()
 }
+
 
 pub fn get_contour(sect: Vec<Vec2>) -> Vec<Point2<f64>> {
     let len = sect.len();
