@@ -231,15 +231,12 @@ pub(crate) fn find_top_std_4(
     if cntrs.len() == 0 {
         return hashes;
     }
-
     const N: usize = 2;
     let ss = GenPolyLines::select_top_all_4(cntrs, N, grid_size, rect);
     if ss.len() < n_sect {
         return hashes;
     }
-
     let mut best_totals: Vec<(f64, Vec<u8>)> = Vec::with_capacity(depth);
-
     let mut ff = |d: f64, hash: Vec<u8>| {
         if let Some(_) = best_totals.iter().find(|a| a.0 == d) {
             return
@@ -251,7 +248,6 @@ pub(crate) fn find_top_std_4(
                     .max_by(|(_, a), (_, b)|
                         a.0.partial_cmp(&b.0).unwrap_or(core::cmp::Ordering::Equal)
                     );
-
                 if let Some((i, r)) = m {
                     if r.0 > d {
                         best_totals[i] = (d, hash);
@@ -262,9 +258,7 @@ pub(crate) fn find_top_std_4(
             }
         }
     };
-
     let mut stack: Vec<usize> = repeat(0).take(n_sect).collect();
-
     loop {
         let mut sco = 0.;
         let mut h: Vec<u8> = Vec::new();
@@ -276,7 +270,6 @@ pub(crate) fn find_top_std_4(
             }
         }
         ff(sco, h);
-
         let mut j = 0;
         while j < n_sect {
             if ss[j].len() == 0 {
@@ -294,19 +287,16 @@ pub(crate) fn find_top_std_4(
             break
         }
     }
-
-    hashes = best_totals.par_iter().map(|hash| {
+    best_totals.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    for hash in best_totals.iter() {
         let mut hasher = Sha256::new();
         hasher.update(hash.1.as_slice());
-
         let mut a: Vec<u8> = repeat(0).take(32 * n_sect).collect();
         let mut buf= a.as_mut();
         let hash = hasher.finalize();
         let hex_hash = base16ct::lower::encode_str(&hash, &mut buf).unwrap();
-
-        hex_hash.to_string()
-    }).collect();
-
+        hashes.push(hex_hash.to_string());
+    }
     hashes.dedup();
     hashes
 }
