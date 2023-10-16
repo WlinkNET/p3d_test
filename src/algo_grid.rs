@@ -2,6 +2,12 @@ use alloc::collections::VecDeque;
 use sha2::{Sha256, Digest};
 use base16ct;
 
+extern crate spin;
+extern crate rayon;
+
+//use spin::Mutex;
+use rayon::prelude::*;
+
 use core::ops::SubAssign;
 use core::iter::repeat;
 
@@ -306,25 +312,33 @@ pub(crate) fn find_top_std_4(
 
 fn cross(triangles: &VctrTriangles) -> Array2<f64> {
     let dims = triangles.dim();
-    let mut d = Array3::zeros((dims.0, 2, dims.1));
+    let d = spin::Mutex::new(Array3::zeros((dims.0, 2, dims.1)));
 
-    for (i, m) in triangles.axis_iter(Axis(0)).enumerate() {
+    // Paralelizacija prve petlje
+    triangles.axis_iter(Axis(0)).enumerate().par_bridge().for_each(|(i, m)| {
+        let mut d_locked = d.lock();
         for (j, p) in m.axis_iter(Axis(1)).enumerate() {
-            d[[i, 0, j]] = p[1] - p[0];
-            d[[i, 1, j]] = p[2] - p[1];
+            d_locked[[i, 0, j]] = p[1] - p[0];
+            d_locked[[i, 1, j]] = p[2] - p[1];
         }
-    }
+    });
 
-    let mut cr = Array2::zeros((dims.0, dims.1));
-    for (i, m) in d.axis_iter(Axis(0)).enumerate() {
-            let a: ArrayView1<f64> = m.slice(s![0, ..]);
-            let b: ArrayView1<f64> = m.slice(s![1, ..]);
-            cr[[i, 0]] = a[1]*b[2] - a[2]*b[1];
-            cr[[i, 1]] = a[2]*b[0] - a[0]*b[2];
-            cr[[i, 2]] = a[0]*b[1] - a[1]*b[0];
-    }
-    cr
+    let cr = spin::Mutex::new(Array2::zeros((dims.0, dims.1)));
+
+    // Paralelizacija druge petlje
+    d.lock().axis_iter(Axis(0)).enumerate().par_bridge().for_each(|(i, m)| {
+        let mut cr_locked = cr.lock();
+        let a: ArrayView1<f64> = m.slice(s![0, ..]);
+        let b: ArrayView1<f64> = m.slice(s![1, ..]);
+        cr_locked[[i, 0]] = a[1]*b[2] - a[2]*b[1];
+        cr_locked[[i, 1]] = a[2]*b[0] - a[0]*b[2];
+        cr_locked[[i, 2]] = a[0]*b[1] - a[1]*b[0];
+    });
+
+    let result = cr.lock().to_owned();
+    result
 }
+
 
 pub fn mass_properties(triangles: VctrTriangles) -> (Array1<f64>, Array2<f64>) {
     let p0: ArrayView2<f64> = triangles.slice(s![0.., 0, 0..]);
