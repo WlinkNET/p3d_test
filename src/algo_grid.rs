@@ -5,7 +5,7 @@ use base16ct;
 extern crate spin;
 extern crate rayon;
 
-//use spin::Mutex;
+use spin::Mutex;
 use rayon::prelude::*;
 
 use core::ops::SubAssign;
@@ -339,6 +339,8 @@ fn cross(triangles: &VctrTriangles) -> Array2<f64> {
 
 
 pub fn mass_properties(triangles: VctrTriangles) -> (Array1<f64>, Array2<f64>) {
+    let dims = triangles.dim();
+
     let p0: ArrayView2<f64> = triangles.slice(s![0.., 0, 0..]);
     let p1: ArrayView2<f64> = triangles.slice(s![0.., 1, 0..]);
     let p2: ArrayView2<f64> = triangles.slice(s![0.., 2, 0..]);
@@ -352,52 +354,30 @@ pub fn mass_properties(triangles: VctrTriangles) -> (Array1<f64>, Array2<f64>) {
     let g2 = &(&f2 + &(&(&p2 + &f1) * &p2));
 
     let d = f1.nrows();
-    let mut integral: Array2<f64> = Array2::zeros((10, d));
-
-    // println!("Triangles:");
-    // println!("{:?}", triangles.slice(s![0, .., ..]));
-    // println!("{:?}", triangles.slice(s![1, .., ..]));
+    let integral = spin::Mutex::new(Array2::zeros((10, d)));
 
     let crosses = cross(&triangles);
 
-    // println!("crosses: {}, {}, {}", crosses.slice(s![0, ..]), crosses.slice(s![1, ..]), crosses.slice(s![2, ..]));
-
-    integral.slice_mut(s![0..1, ..]).assign(&(&crosses.slice(s![.., 0]) * &f1.slice(s![.., 0])));
-    integral.slice_mut(s![1..4, ..]).assign(&(&crosses * &f2).t().slice(s![.., ..]));
-    integral.slice_mut(s![4..7, ..]).assign(&(&crosses * &f3).t().slice(s![.., ..]));
-
-    // println!("Integral:");
-    // println!("{}, {}, {}", integral[[0, 0]], integral[[0,1]], integral[[0,2]]);
-    // println!("{}, {}, {}", integral[[1, 0]], integral[[1,1]], integral[[1,2]]);
-    // println!("{}, {}, {}", integral[[2, 0]], integral[[2,1]], integral[[2,2]]);
-    // println!("{}, {}, {}", integral[[3, 0]], integral[[3,1]], integral[[3,2]]);
-    // println!("{}, {}, {}", integral[[4, 0]], integral[[4,1]], integral[[4,2]]);
-    // println!("{}, {}, {}", integral[[5, 0]], integral[[5,1]], integral[[5,2]]);
-    // println!("{}, {}, {}", integral[[6, 0]], integral[[6,1]], integral[[6,2]]);
-
-    for i in 0..3 {
+    // Parallelize this loop
+    (0..3).into_par_iter().for_each(|i| {
         let triangle_i = (i + 1) % 3;
-        integral.slice_mut(s![i+7, ..]).assign(
+        let mut integral_locked = integral.lock();
+        integral_locked.slice_mut(s![i+7, ..]).assign(
             &(&crosses.slice(s![.., i]) * &(
                     &triangles.slice(s![.., 0, triangle_i]) * &g0.slice(s![.., i]) +
                     &triangles.slice(s![.., 0, triangle_i]) * &g1.slice(s![.., i]) +
                     &triangles.slice(s![.., 0, triangle_i]) * &g2.slice(s![.., i]))
             )
         );
-    }
-
-    // println!("{}, {}, {}", integral[[7, 0]], integral[[7,1]], integral[[7,2]]);
-    // println!("{}, {}, {}", integral[[8, 0]], integral[[8,1]], integral[[8,2]]);
-    // println!("{}, {}, {}", integral[[9, 0]], integral[[9,1]], integral[[9,2]]);
-
+    });
 
     let coefficients: Array1<f64> =  arr1(&[1./6., 1./24., 1./24., 1./24., 1./60., 1./60., 1./60., 1./120., 1./120., 1./120.]);
-    let integrated: Array1<f64> = integral.sum_axis(Axis(1)) * coefficients;
+    let integrated: Array1<f64> = integral.lock().sum_axis(Axis(1)) * coefficients;
+    
     let volume = integrated[0];
     let center_mass: Array1<f64> = if volume.abs() < 1e-10 {
         arr1(&[0., 0., 0.])
-    }
-    else {
+    } else {
         let a = &integrated.slice(s![1..4]);
         a / volume
     };
@@ -429,9 +409,9 @@ pub fn mass_properties(triangles: VctrTriangles) -> (Array1<f64>, Array2<f64>) {
     inertia[[1, 0]] = inertia[[0, 1]];
     inertia *= density;
 
-    // println!("{}", center_mass);
     (center_mass, inertia)
 }
+
 
 
 fn principal_axis(inertia: Array2<f64>) -> (Array1<f64>, Array2<f64>) {
