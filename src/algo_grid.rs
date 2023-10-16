@@ -295,7 +295,7 @@ pub(crate) fn find_top_std_4(
         }
     }
 
-    best_totals.par_iter().map(|hash| {
+    hashes = best_totals.par_iter().map(|hash| {
         let mut hasher = Sha256::new();
         hasher.update(hash.1.as_slice());
 
@@ -305,11 +305,12 @@ pub(crate) fn find_top_std_4(
         let hex_hash = base16ct::lower::encode_str(&hash, &mut buf).unwrap();
 
         hex_hash.to_string()
-    }).collect_into_vec(&mut hashes);
+    }).collect();
 
     hashes.dedup();
     hashes
 }
+
 
 fn cross(triangles: &VctrTriangles) -> Array2<f64> {
     let dims = triangles.dim();
