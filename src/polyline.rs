@@ -362,18 +362,20 @@ impl GenPolyLines {
         let first_point = self.line_buf.nodes.first().unwrap().clone();
         let neib_nodes = NeiborNodes::new(&self.cells, &self.line_buf, start_point, self.line_buf.grid_size);
     
-        neib_nodes.neibs.iter().for_each(|p| {
-            let mut new_gen_lines = self.clone();  // Kloniramo celu instancu GenPolyLines
+        // Kloniramo samo jednom pre petlje
+        let mut new_gen_lines = self.clone();
+    
+        for p in &neib_nodes.neibs {
             if *p == first_point {
                 new_gen_lines.line_buf.nodes.push(*p);
                 f(&new_gen_lines.line_buf);
                 new_gen_lines.line_buf.nodes.pop();
             } else {
                 new_gen_lines.line_buf.nodes.push(*p);
-                new_gen_lines.complete_line(f); // Sada pozivamo complete_line na instance GenPolyLines
+                new_gen_lines.complete_line(f); 
                 new_gen_lines.line_buf.nodes.pop();
             }
-        });
+        }
     }
     
 }
