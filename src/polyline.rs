@@ -134,7 +134,7 @@ impl GenPolyLines {
     pub(crate) fn new(z: CellSet, grid_size: i16) -> Self {
         Self {
             cells: z,
-            line_buf: PolyLine::new(Vec::with_capacity(100), grid_size),
+            line_buf: PolyLine::new(Vec::with_capacity(10000), grid_size),
             lev: 0,
         }
     }
