@@ -5,6 +5,7 @@ use alloc::sync::Arc;
 
 use sha2::{Sha256, Digest};
 use rayon::prelude::*;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use spin::Mutex;
 
 use crate::contour::{CellSet, Cntr, Rect};
@@ -317,7 +318,7 @@ impl GenPolyLines {
     
     
 
-    fn complete_line<F>(&mut self, f: &mut F)
+    /*fn complete_line<F>(&mut self, f: &mut F)
         where
             F: FnMut(&PolyLine) {
 
@@ -354,7 +355,27 @@ impl GenPolyLines {
             self.line_buf.nodes.pop();
         }
         self.lev -= 1;
+    }*/
+
+    fn complete_line(&mut self, f: &mut dyn FnMut(&PolyLine)) {
+        let start_point = self.line_buf.nodes.last().unwrap().clone();
+        let first_point = self.line_buf.nodes.first().unwrap().clone();
+        let neib_nodes = NeiborNodes::new(&self.cells, &self.line_buf, start_point, self.line_buf.grid_size);
+    
+        neib_nodes.neibs.iter().for_each(|p| {
+            let mut new_gen_lines = self.clone();  // Kloniramo celu instancu GenPolyLines
+            if *p == first_point {
+                new_gen_lines.line_buf.nodes.push(*p);
+                f(&new_gen_lines.line_buf);
+                new_gen_lines.line_buf.nodes.pop();
+            } else {
+                new_gen_lines.line_buf.nodes.push(*p);
+                new_gen_lines.complete_line(f); // Sada pozivamo complete_line na instance GenPolyLines
+                new_gen_lines.line_buf.nodes.pop();
+            }
+        });
     }
+    
 }
 
 
@@ -364,6 +385,26 @@ struct NeiborNodes {
     pub(crate) neibs: Vec<Point2<i32>>,
     grid_size: i16,
 }
+
+impl IntoParallelIterator for NeiborNodes {
+    type Item = Point2<i32>;
+    type Iter = rayon::vec::IntoIter<Point2<i32>>;
+
+    fn into_par_iter(self) -> Self::Iter {
+        self.neibs.into_par_iter()
+    }
+}
+
+impl Clone for GenPolyLines {
+    fn clone(&self) -> Self {
+        Self {
+            cells: self.cells.clone(),
+            line_buf: self.line_buf.clone(),
+            lev: self.lev,
+        }
+    }
+}
+
 
 impl NeiborNodes {
     fn new(permited_points: &CellSet, line: &PolyLine, start_point: Point2<i32>, grid_size: i16) -> Self {
